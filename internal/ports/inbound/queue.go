@@ -8,8 +8,11 @@ import (
 )
 
 type Queue interface {
-	CreateQueue(ctx context.Context, name, creator string) error
-	Enqueue(ctx context.Context, queue string, payload string, producer string) error
+	CreateQueue(ctx context.Context, name, user string) error
+	ListQueues(ctx context.Context) ([]string, error)
+	DeleteQueue(ctx context.Context, name, user string) error
+
+	Enqueue(ctx context.Context, queue, payload, user string) error
 	Dequeue(ctx context.Context, queue string) (*model.Message, error)
 	Ack(ctx context.Context, queue string, id uuid.UUID) error
 }

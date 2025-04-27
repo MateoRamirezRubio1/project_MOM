@@ -19,12 +19,15 @@ func NewRouter(admin inbound.Admin, pub inbound.Publisher, cons inbound.Consumer
 	// tópicos
 	r.POST("/topics", authMw, h.CreateTopic)
 	r.GET("/topics", authMw, h.ListTopics)
+	r.DELETE("/topics/:topic", authMw, h.DeleteTopic)
 	r.POST("/topics/:topic/messages", authMw, h.Publish)
 	r.GET("/topics/:topic/messages", authMw, h.Pull)
 	r.POST("/topics/:topic/offsets", authMw, h.CommitOffset)
 
 	// colas
 	r.POST("/queues", authMw, h.CreateQueue)
+	r.GET("/queues", authMw, h.ListQueues)
+	r.DELETE("/queues/:queue", authMw, h.DeleteQueue)
 	r.POST("/queues/:queue/messages", authMw, h.Enqueue)
 	r.GET("/queues/:queue/messages", authMw, h.Dequeue)
 	r.POST("/queues/:queue/ack", authMw, h.Ack)

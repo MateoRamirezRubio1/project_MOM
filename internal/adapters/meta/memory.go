@@ -7,55 +7,123 @@ import (
 	"sync"
 )
 
-var ErrExists = errors.New("topic exists")
+var (
+	ErrExists     = errors.New("already exists")
+	ErrNotFound   = errors.New("not found")
+	ErrNotCreator = errors.New("only creator can delete")
+)
 
 type memoryCatalog struct {
-	mu      sync.RWMutex
-	topics  map[string]int               // topic -> partitions
-	offsets map[string]map[string]uint64 // group -> topic:part -> offset
+	mu sync.RWMutex
+
+	// topic -> {partitions, creator}
+	topics map[string]struct {
+		parts   int
+		creator string
+	}
+
+	// queue -> creator
+	queues map[string]string
+
+	// group -> topic:part -> offset
+	offsets map[string]map[string]uint64
 }
 
 func NewMemoryCatalog() *memoryCatalog {
 	return &memoryCatalog{
-		topics:  make(map[string]int),
+		topics: make(map[string]struct {
+			parts   int
+			creator string
+		}),
+		queues:  make(map[string]string),
 		offsets: make(map[string]map[string]uint64),
 	}
 }
 
-// -------- tópicos --------
-
-func (m *memoryCatalog) CreateTopic(_ context.Context, name string, p int, _ string) error {
+// -------- TOPICS --------
+func (m *memoryCatalog) CreateTopic(_ context.Context, name string, p int, user string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.topics[name]; ok {
 		return ErrExists
 	}
-	m.topics[name] = p
+	m.topics[name] = struct {
+		parts   int
+		creator string
+	}{p, user}
 	return nil
 }
 
 func (m *memoryCatalog) GetTopic(_ context.Context, name string) (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	p, ok := m.topics[name]
+	t, ok := m.topics[name]
 	if !ok {
-		return 0, errors.New("topic not found")
+		return 0, ErrNotFound
 	}
-	return p, nil
+	return t.parts, nil
 }
 
 func (m *memoryCatalog) ListTopics(_ context.Context) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	keys := make([]string, 0, len(m.topics))
+	out := make([]string, 0, len(m.topics))
 	for k := range m.topics {
-		keys = append(keys, k)
+		out = append(out, k)
 	}
-	return keys, nil
+	return out, nil
 }
 
-// -------- offsets (consumer groups) --------
+func (m *memoryCatalog) DeleteTopic(_ context.Context, name, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.topics[name]
+	if !ok {
+		return ErrNotFound
+	}
+	if t.creator != user {
+		return ErrNotCreator
+	}
+	delete(m.topics, name)
+	return nil
+}
 
+// -------- QUEUES --------
+func (m *memoryCatalog) CreateQueue(_ context.Context, name, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.queues[name]; ok {
+		return ErrExists
+	}
+	m.queues[name] = user
+	return nil
+}
+
+func (m *memoryCatalog) ListQueues(_ context.Context) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]string, 0, len(m.queues))
+	for q := range m.queues {
+		out = append(out, q)
+	}
+	return out, nil
+}
+
+func (m *memoryCatalog) DeleteQueue(_ context.Context, name, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	creator, ok := m.queues[name]
+	if !ok {
+		return ErrNotFound
+	}
+	if creator != user {
+		return ErrNotCreator
+	}
+	delete(m.queues, name)
+	return nil
+}
+
+// -------- OFFSETS (consumer groups) --------
 func key(topic string, part int) string { return topic + ":" + strconv.Itoa(part) }
 
 func (m *memoryCatalog) GetOffset(_ context.Context, grp, topic string, part int) (uint64, error) {

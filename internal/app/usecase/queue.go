@@ -12,18 +12,26 @@ import (
 type queueUC struct {
 	meta outbound.MetaStore
 	msg  outbound.MessageStore
-	auth outbound.AuthStore
 }
 
-func NewQueue(meta outbound.MetaStore, msg outbound.MessageStore, auth outbound.AuthStore) inbound.Queue {
-	return &queueUC{meta: meta, msg: msg, auth: auth}
+func NewQueue(meta outbound.MetaStore, msg outbound.MessageStore) inbound.Queue {
+	return &queueUC{meta: meta, msg: msg}
 }
 
-// -- MVP: metaStore aún no persiste colas. Creamos in-mem en MessageStore
+func (q *queueUC) CreateQueue(ctx context.Context, name, user string) error {
+	if err := q.meta.CreateQueue(ctx, name, user); err != nil {
+		return err
+	}
+	// crea stub vacío para garantizar existencia en msgStore
+	return q.msg.Enqueue(ctx, name, model.Message{})
+}
 
-func (q *queueUC) CreateQueue(_ context.Context, name, _ string) error {
-	// en esta versión, simplemente asegura que la cola exista creando un msgStore entry
-	return q.msg.Enqueue(context.Background(), name, model.Message{}) // no-op msg
+func (q *queueUC) ListQueues(ctx context.Context) ([]string, error) {
+	return q.meta.ListQueues(ctx)
+}
+
+func (q *queueUC) DeleteQueue(ctx context.Context, name, user string) error {
+	return q.meta.DeleteQueue(ctx, name, user)
 }
 
 func (q *queueUC) Enqueue(ctx context.Context, queue, payload, user string) error {
@@ -31,7 +39,6 @@ func (q *queueUC) Enqueue(ctx context.Context, queue, payload, user string) erro
 		ID:       uuid.New(),
 		Payload:  []byte(payload),
 		Producer: user,
-		// Topic/Part no se usan en cola
 	}
 	return q.msg.Enqueue(ctx, queue, m)
 }
@@ -43,5 +50,3 @@ func (q *queueUC) Dequeue(ctx context.Context, queue string) (*model.Message, er
 func (q *queueUC) Ack(ctx context.Context, queue string, id uuid.UUID) error {
 	return q.msg.Ack(ctx, queue, id)
 }
-
-// (re-queue en memoria sucede en adapter con TTL de 30s)

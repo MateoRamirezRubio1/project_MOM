@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	srv := BuildServer() // wiring.go
+	srv := buildServer() // wiring.go
 	addr := ":8080"
 	if v := os.Getenv("PORT"); v != "" {
 		addr = ":" + v

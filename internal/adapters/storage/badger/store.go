@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	msgPrefix = "m:" // m:<topic>:<part>:<offset>
-	hwmPrefix = "h:" // h:<topic>:<part>
-	qPrefix   = "q:" // q:<queue>:<seq>
-	infPrefix = "f:" // f:<queue>:<uuid>
+	msgPrefix    = "m:" // m:<topic>:<part>:<offset>
+	hwmPrefix    = "h:" // h:<topic>:<part>
+	qPrefix      = "q:" // q:<queue>:<seq>
+	infPrefix    = "f:" // f:<queue>:<uuid>
+	offsetPrefix = "o:" // o:<group>:<topic>:<part> -> offset(uint64)
 )
 
 // ------------------------------------------------------------------
@@ -104,6 +105,7 @@ func (s *Store) Read(_ context.Context, topic string, part int, from uint64, max
 	})
 	return out, err
 }
+
 func (s *Store) Delete(context.Context, string, int, uint64) error { return nil }
 
 // ------------------------------------------------------------------
@@ -155,6 +157,18 @@ func (s *Store) Dequeue(_ context.Context, q string) (*model.Message, error) {
 func (s *Store) Ack(_ context.Context, q string, id uuid.UUID) error {
 	return s.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete(key(infPrefix, q, id.String()))
+	})
+}
+
+// ------------------------------------------------------------------
+// Consumer Groups & Offsets
+// ------------------------------------------------------------------
+
+// CommitOffset guarda el offset para un grupo de consumidores.
+func (s *Store) CommitOffset(ctx context.Context, group, topic string, part int, offset uint64) error {
+	offsetKey := key(offsetPrefix, group, topic, strconv.Itoa(part))
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(offsetKey, u64(offset))
 	})
 }
 

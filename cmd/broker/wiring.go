@@ -2,41 +2,46 @@ package main
 
 import (
 	"log"
-	"os"
 
-	"github.com/MateoRamirezRubio1/project_MOM/internal/adapters/auth"
-	badgermeta "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/meta/badger"
-	"github.com/MateoRamirezRubio1/project_MOM/internal/adapters/rest"
-	badgerstore "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/storage/badger"
-	"github.com/MateoRamirezRubio1/project_MOM/internal/app/usecase"
 	"github.com/gin-gonic/gin"
+
+	// adapters
+	authadapter "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/auth"
+	badgermeta "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/meta/badger"
+	restadapter "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/rest"
+	badgerstore "github.com/MateoRamirezRubio1/project_MOM/internal/adapters/storage/badger"
+
+	// use-cases
+	"github.com/MateoRamirezRubio1/project_MOM/internal/app/usecase"
 )
 
-func BuildServer() *gin.Engine {
-	// ---------- Badger storage path -------------
-	dataDir := "./data"
-	if v := os.Getenv("MOM_DATA"); v != "" {
-		dataDir = v
-	}
-
-	// ---------- Message store (persistent) ------
-	msgStore, err := badgerstore.New(dataDir)
+func buildServer() *gin.Engine {
+	//------------------------------------------------------------------
+	// Infraestructura de persistencia (BadgerDB)
+	//------------------------------------------------------------------
+	store, err := badgerstore.New("./data")
 	if err != nil {
-		log.Fatalf("badger msgStore: %v", err)
+		log.Fatalf("opening badger store: %v", err)
 	}
-	msgStore.StartRequeueLoop()
+	store.StartRequeueLoop()
 
-	// ---------- Meta store persistent -----------
-	metaStore := badgermeta.New(msgStore.DB())
+	catalog := badgermeta.New(store.DB()) // meta-store comparte la misma BD
 
-	// ---------- Auth store -----------------------
-	authStore := auth.NewInMemory()
+	//------------------------------------------------------------------
+	// Autenticación en memoria
+	//------------------------------------------------------------------
+	authStore := authadapter.NewInMemory()
 
-	// ---------- Use‑cases ------------------------
-	adminUC := usecase.NewAdmin(metaStore, authStore)
-	pubUC := usecase.NewPublisher(metaStore, msgStore, authStore)
-	conUC := usecase.NewConsumer(metaStore, msgStore)
-	queueUC := usecase.NewQueue(metaStore, msgStore, authStore)
+	//------------------------------------------------------------------
+	// Casos de uso (hexagonal)
+	//------------------------------------------------------------------
+	adminUC := usecase.NewAdmin(catalog)                     // <- solo MetaStore
+	pubUC := usecase.NewPublisher(catalog, store, authStore) // publicación
+	consUC := usecase.NewConsumer(catalog, store)            // consumo
+	queueUC := usecase.NewQueue(catalog, store)              // <- Meta+Store (sin auth)
 
-	return rest.NewRouter(adminUC, pubUC, conUC, queueUC, authStore)
+	//------------------------------------------------------------------
+	// Router HTTP
+	//------------------------------------------------------------------
+	return restadapter.NewRouter(adminUC, pubUC, consUC, queueUC, authStore)
 }
