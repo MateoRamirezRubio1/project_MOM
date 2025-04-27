@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    {
+      "id": "n1",
+      "host": "localhost:9090"
+    },
+    {
+      "id": "n2",
+      "host": "localhost:9091"
+    }
+  ]
+}

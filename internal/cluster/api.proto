@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package cluster;
+
+option go_package = "github.com/MateoRamirezRubio1/project_MOM/internal/clusterpb;clusterpb";
+
+message Message   { string topic = 1; uint32 part = 2; bytes json = 3; }
+message ReplicateRequest { repeated Message batch = 1; }
+message ReplicateAck     { }
+
+service Replicator {
+  rpc Replicate(ReplicateRequest) returns (ReplicateAck);
+}

@@ -7,6 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type ReplicaMessage struct {
+	Topic string
+	Part  int
+	Json  []byte
+}
+
 type MessageStore interface {
 	// tópicos ------------------------------------------------------
 	Append(ctx context.Context, msg model.Message) (offset uint64, err error)

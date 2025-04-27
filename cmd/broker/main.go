@@ -1,16 +1,10 @@
 package main
 
-import (
-	"log"
-	"os"
-)
+import "time"
 
 func main() {
-	srv := buildServer() // wiring.go
-	addr := ":8080"
-	if v := os.Getenv("PORT"); v != "" {
-		addr = ":" + v
-	}
-	log.Printf("MOM listening on %s", addr)
-	log.Fatal(srv.Run(addr))
+	_ = buildServer() // goroutine already serving
+	for {
+		time.Sleep(time.Hour)
+	} // block main
 }
