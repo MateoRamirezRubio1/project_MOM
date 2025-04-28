@@ -1,13 +1,28 @@
 syntax = "proto3";
 
 package cluster;
-
 option go_package = "github.com/MateoRamirezRubio1/project_MOM/internal/clusterpb;clusterpb";
 
-message Message   { string topic = 1; uint32 part = 2; bytes json = 3; }
+import "google/protobuf/empty.proto";
+
+message Message {
+  string uuid    = 1;
+  string topic   = 2;
+  uint32 part    = 3;
+  uint64 offset  = 4;
+  string key     = 5;
+  string user    = 6;
+  bytes  payload = 7;
+}
+
 message ReplicateRequest { repeated Message batch = 1; }
 message ReplicateAck     { }
 
+message RangeRequest { string topic = 1; uint32 part = 2; uint64 from = 3; uint64 to = 4; }
+message RangeBatch  { repeated Message batch = 1; }
+
 service Replicator {
-  rpc Replicate(ReplicateRequest) returns (ReplicateAck);
+  rpc Replicate (ReplicateRequest) returns (ReplicateAck);
+  rpc GetRange  (RangeRequest)     returns (RangeBatch);
+  rpc Ping      (google.protobuf.Empty) returns (google.protobuf.Empty);
 }

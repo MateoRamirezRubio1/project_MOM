@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MateoRamirezRubio1/project_MOM/internal/cluster"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/domain/model"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/ports/outbound"
 	"github.com/dgraph-io/badger/v4"
@@ -59,6 +60,7 @@ func b2u64(b []byte) uint64 { return binary.BigEndian.Uint64(b) }
 // Tópicos
 // ------------------------------------------------------------------
 
+// Append agrega un mensaje NUEVO generado por este nodo.
 func (s *Store) Append(_ context.Context, msg model.Message) (uint64, error) {
 	var offset uint64
 	err := s.db.Update(func(txn *badger.Txn) error {
@@ -72,14 +74,65 @@ func (s *Store) Append(_ context.Context, msg model.Message) (uint64, error) {
 		} else {
 			return err
 		}
-		msg.ID, msg.Offset = uuid.New(), offset
+
+		/* si viene del publicador ya trae UUID,
+		   si viene del reconciliador es uuid.Nil y le ponemos uno */
+		if msg.ID == uuid.Nil {
+			msg.ID = uuid.New()
+		}
+		msg.Offset = offset
+
 		js, _ := json.Marshal(msg)
-		if err := txn.Set(key(msgPrefix, msg.Topic, strconv.Itoa(msg.PartID), strconv.FormatUint(offset, 10)), js); err != nil {
+		if err := txn.Set(
+			key(msgPrefix, msg.Topic, strconv.Itoa(msg.PartID), strconv.FormatUint(offset, 10)), js); err != nil {
 			return err
 		}
 		return txn.Set(hwmKey, u64(offset+1))
 	})
+	if err == nil {
+		// refresca hwm en memoria para reconciliación
+		cluster.TrackNextOffset(msg.Topic, msg.PartID, offset+1)
+	}
 	return offset, err
+}
+
+// AppendWithOffset inserta un mensaje VENIDO DE OTRO NODO conservando offset.
+func (s *Store) AppendWithOffset(_ context.Context, msg model.Message) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		partStr := strconv.Itoa(msg.PartID)
+		hwmKey := key(hwmPrefix, msg.Topic, partStr)
+		msgKey := key(msgPrefix, msg.Topic, partStr, strconv.FormatUint(msg.Offset, 10))
+
+		// 1) ¿ya lo tenía?
+		if _, err := txn.Get(msgKey); err == nil {
+			// Aun así se puede necesitar subir el HWM si se está rezagado
+			curNext := uint64(0)
+			if item, err := txn.Get(hwmKey); err == nil {
+				val, _ := item.ValueCopy(nil)
+				curNext = b2u64(val)
+			}
+			if next := msg.Offset + 1; next > curNext {
+				_ = txn.Set(hwmKey, u64(next))
+				cluster.TrackNextOffset(msg.Topic, msg.PartID, next) // RAM
+			}
+			return nil
+		}
+
+		// 2) insertar el mensaje
+		if msg.ID == uuid.Nil {
+			msg.ID = uuid.New()
+		}
+		js, _ := json.Marshal(msg)
+		if err := txn.Set(msgKey, js); err != nil {
+			return err
+		}
+
+		// 3) dejar el HWM persistido al día
+		next := msg.Offset + 1
+		_ = txn.Set(hwmKey, u64(next))
+		cluster.TrackNextOffset(msg.Topic, msg.PartID, next) // RAM
+		return nil
+	})
 }
 
 func (s *Store) Read(_ context.Context, topic string, part int, from uint64, max int) ([]model.Message, error) {
@@ -197,7 +250,7 @@ func (s *Store) StartRequeueLoop() {
 						continue
 					}
 					q, id := parts[1], parts[2]
-					// reinserta stub (en real moveríamos payload original)
+					// reinserta stub (en real se movería payload original)
 					stub := model.Message{ID: uuid.MustParse(id), Payload: []byte("expired")}
 					js, _ := json.Marshal(stub)
 					seq := uuid.New().String()

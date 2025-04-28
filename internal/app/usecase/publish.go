@@ -3,12 +3,14 @@ package usecase
 import (
 	"context"
 
+	"github.com/MateoRamirezRubio1/project_MOM/internal/cluster"
 	cl "github.com/MateoRamirezRubio1/project_MOM/internal/cluster"
 	pb "github.com/MateoRamirezRubio1/project_MOM/internal/clusterpb"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/domain/model"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/domain/service"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/ports/inbound"
 	"github.com/MateoRamirezRubio1/project_MOM/internal/ports/outbound"
+	"github.com/google/uuid"
 )
 
 type publisherUC struct {
@@ -37,17 +39,35 @@ func (p *publisherUC) Publish(ctx context.Context,
 	}
 	partID := service.HashPartition(key, parts)
 
+	// --- construye con UUID antes de Append ---
 	m := model.Message{
-		Topic: topic, PartID: partID, Key: key,
-		Payload: []byte(payload), Producer: user,
+		ID:       uuid.New(),
+		Topic:    topic,
+		PartID:   partID,
+		Key:      key,
+		Payload:  []byte(payload),
+		Producer: user,
 	}
 	offset, err := p.msg.Append(ctx, m)
-	if err == nil && p.fan != nil {
+	if err != nil {
+		return 0, 0, err
+	}
+	cluster.TrackNextOffset(topic, partID, offset+1)
+
+	// registro HWM para reconciliación ----
+	cl.TrackNextOffset(topic, partID, offset+1)
+
+	// ---- fan-out a peers (si se está en cluster) -------
+	if p.fan != nil {
 		p.fan.Broadcast(ctx, []*pb.Message{{
-			Topic: topic,
-			Part:  uint32(partID),
-			Json:  []byte(payload),
+			Uuid:    m.ID.String(),
+			Topic:   topic,
+			Part:    uint32(partID),
+			Offset:  offset,
+			Key:     key,
+			User:    user,
+			Payload: []byte(payload),
 		}})
 	}
-	return partID, offset, err
+	return partID, offset, nil
 }

@@ -18,61 +18,52 @@ import (
 	"github.com/MateoRamirezRubio1/project_MOM/internal/app/usecase"
 )
 
-// buildServer returns the HTTP router and – IF this process belongs to the
-// cluster – also starts a gRPC replica-endpoint in a goroutine (fire-and-forget)
 func buildServer() *gin.Engine {
-	//----------------------------------------------------------------------
-	// CLI flags -----------------------------------------------------------
-	//----------------------------------------------------------------------
-	dataDir := flag.String("data", "./data", "badger dir (per-node)")
-	httpAddr := flag.String("http", ":8080", "REST listen addr")
-	clusterCF := flag.String("cluster", "cluster.json", "cluster config file")
+	/* ───── flags ───── */
+	dataDir := flag.String("data", "./data", "Badger dir")
+	httpAddr := flag.String("http", ":8080", "REST bind")
+	clusterCF := flag.String("cluster", "cluster.json", "cluster config")
 	flag.Parse()
 
-	//----------------------------------------------------------------------
-	// Persistent storage (Badger) ----------------------------------------
-	//----------------------------------------------------------------------
+	/* ───── Badger ───── */
 	store, err := badgerstore.New(*dataDir)
 	if err != nil {
-		log.Fatalf("badger: %v", err)
+		log.Fatal(err)
 	}
+	cluster.RebuildHWM(store.DB()) // mantiene compatibilidad
 	store.StartRequeueLoop()
 	catalog := badgermeta.New(store.DB())
 
-	//----------------------------------------------------------------------
-	// In-memory auth (demo) ----------------------------------------------
-	//----------------------------------------------------------------------
+	/* ───── auth demo ───── */
 	authStore := authadapter.NewInMemory()
 
-	//----------------------------------------------------------------------
-	// Cluster set-up (optional) ------------------------------------------
-	//----------------------------------------------------------------------
+	/* ───── cluster (opcional) ───── */
 	var fan *cluster.Fanout
-	selfID := os.Getenv("NODE_ID") // "n1", "n2", …
-	if cfg, err := cluster.Load(*clusterCF); err == nil && selfID != "" {
-		fan = cluster.NewFanout(cfg, selfID) // nil if single-node
-		if n := cfg.Self(selfID); n != nil { // run replica listener
-			cluster.StartGRPCServer(n.Host, store)
-			log.Printf("[cluster] node %s up (%s)", selfID, n.Host)
+	selfID := os.Getenv("NODE_ID")
+	cfg, _ := cluster.Load(*clusterCF)
+	cluster.GlobalCfg, cluster.GlobalSelfID = cfg, selfID // ★
+
+	if cfg != nil && selfID != "" {
+		fan = cluster.NewFanout(cfg, selfID)
+		if n := cfg.Self(selfID); n != nil {
+			// ← se pasa también catalog
+			cluster.StartGRPCServer(n.Host, store, catalog)
+			log.Printf("[cluster] node %s activo (%s)", selfID, n.Host)
 		}
 	}
 
-	//----------------------------------------------------------------------
-	// Hex-use-cases -------------------------------------------------------
-	//----------------------------------------------------------------------
+	/* ───── use-cases ───── */
 	adminUC := usecase.NewAdmin(catalog)
 	pubUC := usecase.NewPublisher(catalog, store, authStore, fan)
 	consUC := usecase.NewConsumer(catalog, store)
 	queueUC := usecase.NewQueue(catalog, store)
 
-	//----------------------------------------------------------------------
-	// Gin router ----------------------------------------------------------
-	//----------------------------------------------------------------------
+	/* ───── router ───── */
 	r := restadapter.NewRouter(adminUC, pubUC, consUC, queueUC, authStore)
 	go func() {
-		log.Printf("[REST] listening on %s", *httpAddr)
+		log.Printf("[REST] escuchando en %s", *httpAddr)
 		if err := r.Run(*httpAddr); err != nil {
-			log.Fatalf("[REST] %v", err)
+			log.Fatal(err)
 		}
 	}()
 	return r

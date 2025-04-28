@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion8
 
 const (
 	Replicator_Replicate_FullMethodName = "/cluster.Replicator/Replicate"
+	Replicator_GetRange_FullMethodName  = "/cluster.Replicator/GetRange"
+	Replicator_Ping_FullMethodName      = "/cluster.Replicator/Ping"
 )
 
 // ReplicatorClient is the client API for Replicator service.
@@ -27,6 +30,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ReplicatorClient interface {
 	Replicate(ctx context.Context, in *ReplicateRequest, opts ...grpc.CallOption) (*ReplicateAck, error)
+	GetRange(ctx context.Context, in *RangeRequest, opts ...grpc.CallOption) (*RangeBatch, error)
+	Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type replicatorClient struct {
@@ -47,11 +52,33 @@ func (c *replicatorClient) Replicate(ctx context.Context, in *ReplicateRequest, 
 	return out, nil
 }
 
+func (c *replicatorClient) GetRange(ctx context.Context, in *RangeRequest, opts ...grpc.CallOption) (*RangeBatch, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RangeBatch)
+	err := c.cc.Invoke(ctx, Replicator_GetRange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *replicatorClient) Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Replicator_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ReplicatorServer is the server API for Replicator service.
 // All implementations must embed UnimplementedReplicatorServer
 // for forward compatibility
 type ReplicatorServer interface {
 	Replicate(context.Context, *ReplicateRequest) (*ReplicateAck, error)
+	GetRange(context.Context, *RangeRequest) (*RangeBatch, error)
+	Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	mustEmbedUnimplementedReplicatorServer()
 }
 
@@ -61,6 +88,12 @@ type UnimplementedReplicatorServer struct {
 
 func (UnimplementedReplicatorServer) Replicate(context.Context, *ReplicateRequest) (*ReplicateAck, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Replicate not implemented")
+}
+func (UnimplementedReplicatorServer) GetRange(context.Context, *RangeRequest) (*RangeBatch, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRange not implemented")
+}
+func (UnimplementedReplicatorServer) Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedReplicatorServer) mustEmbedUnimplementedReplicatorServer() {}
 
@@ -93,6 +126,42 @@ func _Replicator_Replicate_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Replicator_GetRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicatorServer).GetRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Replicator_GetRange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicatorServer).GetRange(ctx, req.(*RangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Replicator_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicatorServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Replicator_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicatorServer).Ping(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Replicator_ServiceDesc is the grpc.ServiceDesc for Replicator service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -103,6 +172,14 @@ var Replicator_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Replicate",
 			Handler:    _Replicator_Replicate_Handler,
+		},
+		{
+			MethodName: "GetRange",
+			Handler:    _Replicator_GetRange_Handler,
+		},
+		{
+			MethodName: "Ping",
+			Handler:    _Replicator_Ping_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
